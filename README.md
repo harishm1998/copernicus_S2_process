@@ -59,4 +59,6 @@ Compile:g++ -std=c++20 -fPIC -shared \
   -lproj -lgeos_c -lsqlite3 -lcurl \
   -lgdal -lpthread -ldl -lm
 Run:./s2_processor S2A_MSIL2A_...SAFE.zip output_sum.tif ADD B04 B03
+./s2_processor S2A_MSIL2A_20250721T061311_N0511_R134_T42SWD_20250721T084516.SAFE.zip S2A_MSIL2A_20250721T061311_N0511_R134_T42SWD_20250721T084516.tif NDVI B08 B04
+
 This systematic approach ensures that the project remains scalable and easy to manage as more image processing functionalities are added.
