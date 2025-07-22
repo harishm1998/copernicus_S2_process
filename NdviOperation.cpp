@@ -4,23 +4,19 @@
 #include <numeric> // For std::accumulate (if needed, not directly for NDVI)
 #include <cmath>   // For std::abs (if needed)
 #include <stdexcept> // For std::runtime_error
-#include <filesystem> // <--- ADDED: Required for std::filesystem
+#include <filesystem> // Required for std::filesystem
 
 // GDAL headers (only include what's strictly necessary here)
 #include "gdal_priv.h"
 
-// Re-declare helper functions from s2_processor.cpp
-// In a real project, these would be in a shared utility library.
-// For this example, we're declaring them here because they are defined in s2_processor.cpp
-// and this plugin will be compiled separately.
-std::optional<std::vector<float>> readBandToFloat(GDALRasterBand* poBand, int nXSize, int nYSize);
-bool writeOutputTiff(const std::string& outputPath, int nXSize, int nYSize,
-                     GDALDataset* poRefDS, const std::vector<float>& outputData);
+#include "GdalUtils.h" // <--- ADDED: Include GdalUtils.h
+
+// No more re-declarations for readBandToFloat and writeOutputTiff here!
 
 
 bool NdviOperation::execute(const std::map<std::string, std::string>& bandPaths,
-                           const std::vector<std::string>& args,
-                           const std::string& outputPath) {
+                            const std::vector<std::string>& args,
+                            const std::string& outputPath) {
     std::cout << "\n--- Performing NDVI Calculation (Modular) ---" << std::endl;
     if (args.size() != 2) {
         std::cerr << "[ERROR] NDVI operation requires 2 arguments: <NIR_band_name> <RED_band_name>." << std::endl;
@@ -59,7 +55,7 @@ bool NdviOperation::execute(const std::map<std::string, std::string>& bandPaths,
 
     if (nXSize != poRedBand->GetXSize() || nYSize != poRedBand->GetYSize()) {
         std::cerr << "[ERROR] NIR and Red bands have different dimensions (" << nXSize << "x" << nYSize << " vs "
-                  << poRedBand->GetXSize() << "x" << poRedBand->GetYSize() << "). Cannot perform operation." << std::endl;
+        << poRedBand->GetXSize() << "x" << poRedBand->GetYSize() << "). Cannot perform operation." << std::endl;
         GDALClose(poNirDS); GDALClose(poRedDS);
         return false;
     }
@@ -95,14 +91,14 @@ bool NdviOperation::execute(const std::map<std::string, std::string>& bandPaths,
     GDALClose(poNirDS);
     GDALClose(poRedDS);
     return success;
-}
+                            }
 
-// --- Factory functions for dynamic loading ---
-// These must be extern "C" to prevent name mangling
-extern "C" std::unique_ptr<IOperation> createOperationInstance() {
-    return std::make_unique<NdviOperation>();
-}
+                            // --- Factory functions for dynamic loading ---
+                            // These must be extern "C" to prevent name mangling
+                            extern "C" std::unique_ptr<IOperation> createOperationInstance() {
+                                return std::make_unique<NdviOperation>();
+                            }
 
-extern "C" const char* getOperationName() {
-    return "NDVI"; // Must match the name returned by getName() method
-}
+                            extern "C" const char* getOperationName() {
+                                return "NDVI"; // Must match the name returned by getName() method
+                            }

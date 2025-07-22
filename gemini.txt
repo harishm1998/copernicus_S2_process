@@ -1,0 +1,362 @@
+You're looking for a comprehensive, object-oriented C++ solution for processing Sentinel-2 imagery, complete with detailed debugging, zip extraction, and a modular design for band operations. This is a robust approach for high-performance geospatial tasks.
+
+Below, I've provided a C++ program structured with an S2Processor class that encapsulates the core logic. It includes a MinizipExtractor class as a conceptual integration point for zip extraction. Please note: C++ does not have a built-in zip library. You will need to download and integrate an external library like minizip (or libzip) into your project. I've provided detailed instructions on how to do this.
+
+The design emphasizes modularity:
+
+    S2Processor class: Handles GDAL initialization, band discovery, and orchestrates the chosen operation.
+
+    MinizipExtractor class: A placeholder/example for integrating a zip extraction library.
+
+    Separate Operation Functions: Each band operation (NDVI, Addition, Subtraction, Filtering) is a standalone function.
+
+    Pluggable Operations: The S2Processor uses std::map<std::string, std::function<bool(...)>> to register operations, allowing new ones to be added without modifying the core S2Processor logic.
+
+C++ GDAL Sentinel-2 Band Processor (OOPS & Modular)
+
+C++ GDAL Sentinel-2 Band Processor (OOPS & Modular)
+Jul 21, 9:40 PM
+
+How to Compile and Run (with Minizip Integration)
+
+This section details how to compile the code, assuming you'll integrate minizip for actual zip extraction.
+
+1. Install Dependencies
+
+    GDAL:
+
+        Linux (Debian/Ubuntu): sudo apt-get update && sudo apt-get install libgdal-dev gdal-bin
+
+        macOS (Homebrew): brew install gdal
+
+        Windows: Download the GDAL SDK from gisinternals.com (choose the appropriate version, e.g., "release-1911-x64-gdal-3-6-2-mapserver-8-0-0" or newer). Follow their instructions for setting up environment variables and linking in your IDE (Visual Studio, MinGW, etc.).
+
+    Minizip (or libzip):
+
+        Minizip (Recommended for simplicity):
+
+            Download the source code from the minizip-ng GitHub repository: https://github.com/zlib-ng/minizip-ng
+
+            Unzip it.
+
+            You'll typically need zlib as a dependency for minizip.
+
+                Linux/macOS: sudo apt-get install zlib1g-dev or brew install zlib
+
+                Windows: zlib is often included with minizip distributions or can be downloaded separately.
+
+            Build Minizip:
+
+                Navigate to the minizip-ng directory.
+
+                Usually, you can use CMake:
+                Bash
+
+                mkdir build
+                cd build
+                cmake ..
+                make
+                sudo make install # Or copy libs/headers manually
+
+                Note the location of the libminizip.a (or .lib on Windows) and the minizip.h (or unzip.h, zip.h) headers.
+
+2. Modify the C++ Code for Actual Zip Extraction
+
+In the MinizipExtractor::extract method, replace the placeholder comments with actual minizip calls. This will involve:
+
+    Including minizip headers (e.g., #include "unzip.h").
+
+    Using unzOpen, unzGoToFirstFile, unzLocateFile, unzGetCurrentFileInfo, unzOpenCurrentFile, unzReadCurrentFile, unzCloseCurrentFile, unzClose functions to iterate through the zip archive and extract files.
+
+    Creating directories as needed using fs::create_directories.
+
+Example Snippet (Conceptual MinizipExtractor::extract with minizip):
+C++
+
+#include "unzip.h" // Add this at the top of your s2_processor.cpp
+
+// ... inside MinizipExtractor::extract method ...
+
+// --- Actual minizip integration would go here ---
+unzFile uf = unzOpen(zipFilePath.c_str());
+if (!uf) {
+    std::cerr << "[ERROR] Could not open zip file: " << zipFilePath << std::endl;
+    throw std::runtime_error("Failed to open zip file.");
+}
+std::cout << "[DEBUG] Zip file opened with minizip." << std::endl;
+
+// Get info about the first file in the archive
+unz_global_info global_info;
+if (unzGetGlobalInfo(uf, &global_info) != UNZ_OK) {
+    unzClose(uf);
+    throw std::runtime_error("Failed to get global zip info.");
+}
+
+char filename_in_zip[256];
+for (uLong i = 0; i < global_info.number_entry; ++i) {
+    unz_file_info file_info;
+    if (unzGetCurrentFileInfo(uf, &file_info, filename_in_zip, sizeof(filename_in_zip),
+                              nullptr, 0, nullptr, 0) != UNZ_OK) {
+        unzClose(uf);
+        throw std::runtime_error("Failed to get current file info.");
+    }
+
+    fs::path current_file_path = fs::path(destDirPath) / filename_in_zip;
+
+    if (filename_in_zip[strlen(filename_in_zip) - 1] == '/') { // Directory
+        fs::create_directories(current_file_path);
+        std::cout << "[DEBUG] Created directory: " << current_file_path.string() << std::endl;
+    } else { // File
+        fs::create_directories(current_file_path.parent_path()); // Ensure parent directory exists
+
+        if (unzOpenCurrentFile(uf) != UNZ_OK) {
+            std::cerr << "[ERROR] Could not open current file in zip: " << filename_in_zip << std::endl;
+            unzClose(uf);
+            throw std::runtime_error("Failed to open current file in zip.");
+        }
+
+        std::ofstream outfile(current_file_path, std::ios::binary);
+        if (!outfile.is_open()) {
+            std::cerr << "[ERROR] Could not create output file: " << current_file_path.string() << std::endl;
+            unzCloseCurrentFile(uf);
+            unzClose(uf);
+            throw std::runtime_error("Failed to create output file.");
+        }
+
+        char buffer[4096];
+        int bytes_read = 0;
+        do {
+            bytes_read = unzReadCurrentFile(uf, buffer, sizeof(buffer));
+            if (bytes_read < 0) {
+                std::cerr << "[ERROR] Error reading from zip file: " << filename_in_zip << std::endl;
+                outfile.close();
+                unzCloseCurrentFile(uf);
+                unzClose(uf);
+                throw std::runtime_error("Error reading from zip file.");
+            }
+            if (bytes_read > 0) {
+                outfile.write(buffer, bytes_read);
+            }
+        } while (bytes_read > 0);
+
+        outfile.close();
+        unzCloseCurrentFile(uf);
+        std::cout << "[DEBUG] Extracted file: " << current_file_path.string() << std::endl;
+    }
+
+    if (i < global_info.number_entry - 1) {
+        if (unzGoToNextFile(uf) != UNZ_OK) {
+            unzClose(uf);
+            throw std::runtime_error("Failed to go to next file in zip.");
+        }
+    }
+}
+unzClose(uf);
+std::cout << "[INFO] Minizip extraction complete." << std::endl;
+// --- End of actual minizip integration ---
+
+3. Compile
+
+    Linux/macOS:
+    Bash
+
+g++ s2_processor.cpp -o s2_processor $(gdal-config --cflags --libs) -lminizip -lz -std=c++17 -lstdc++fs
+
+    -lminizip: Links against the minizip library.
+
+    -lz: Links against zlib (often a dependency of minizip).
+
+    -std=c++17: Essential for std::filesystem and std::optional.
+
+    -lstdc++fs: Explicitly links the filesystem library on some systems.
+
+Windows (using Visual Studio Command Prompt):
+You'll need to adjust paths to your GDAL and Minizip installations.
+DOS
+
+    cl /EHsc /std:c++17 s2_processor.cpp /I"C:\path\to\gdal\include" /I"C:\path\to\minizip\include" /link /LIBPATH:"C:\path\to\gdal\lib" /LIBPATH:"C:\path\to\minizip\lib" gdal_i.lib minizip.lib zlib.lib
+
+    (Replace paths and library names as per your installation).
+
+4. Run
+
+Place your S2A_MSIL2A_...zip file in the same directory as your compiled s2_processor executable, or provide its full path.
+
+    Example: NDVI Calculation (using B08 for NIR and B04 for Red):
+    Bash
+
+./s2_processor S2A_MSIL2A_20250718T060301_N0511_R091_T42RYT_20250718T083016.SAFE.zip output_ndvi.tif NDVI B08 B04
+
+Example: Band Addition (e.g., B04 + B08):
+Bash
+
+./s2_processor S2A_MSIL2A_20250718T060301_N0511_R091_T42RYT_20250718T083016.SAFE.zip output_sum.tif ADD B04 B08
+
+Example: Band Subtraction (e.g., B08 - B04):
+Bash
+
+./s2_processor S2A_MSIL2A_20250718T060301_N0511_R091_T42RYT_20250718T083016.SAFE.zip output_diff.tif SUB B08 B04
+
+Example: Apply Averaging Filter (e.g., to B04):
+Bash
+
+    ./s2_processor S2A_MSIL2A_20250718T060301_N0511_R091_T42RYT_20250718T083016.SAFE.zip output_filtered_b04.tif FILTER B04
+
+How to Plug New Band Operation Modules
+
+The S2Processor class is designed for easy extension of band operations without modifying its core logic. Here's how:
+
+Step 1: Define Your New Operation Function
+
+Create a new free function that performs your desired band operation. It must have the following signature:
+C++
+
+bool op_YourNewOperationName(const std::map<std::string, std::string>& bandPaths,
+                            const std::vector<std::string>& args,
+                            const std::string& outputPath) {
+    std::cout << "\n--- Performing Your New Operation ---" << std::endl;
+    // 1. Validate 'args' (check if enough arguments are provided for your operation)
+    if (args.size() < REQUIRED_ARGS) {
+        std::cerr << "[ERROR] YourNewOperation requires X arguments." << std::endl;
+        return false;
+    }
+
+    // 2. Access band paths using 'bandPaths' map
+    //    e.g., const std::string& bandXName = args[0];
+    //          GDALDataset *poBandXDS = (GDALDataset *) GDALOpen(bandPaths.at(bandXName).c_str(), GA_ReadOnly);
+    //    Remember to handle nullptrs and close datasets.
+
+    // 3. Read band data into memory (use readBandToFloat helper)
+    //    e.g., std::optional<std::vector<float>> bandXDataOpt = readBandToFloat(poBandX, nXSize, nYSize);
+
+    // 4. Perform your custom pixel-wise or image-wide calculations
+    //    e.g., std::vector<float> resultData(size);
+    //          for (size_t i = 0; i < resultData.size(); ++i) {
+    //              resultData[i] = ... your calculation ...;
+    //          }
+
+    // 5. Write the result to the output TIFF (use writeOutputTiff helper)
+    //    bool success = writeOutputTiff(outputPath, nXSize, nYSize, poReferenceDS, resultData);
+
+    // 6. Clean up (close GDAL datasets)
+    //    GDALClose(poBandXDS);
+
+    return true; // Return true on success, false on failure
+}
+
+Example: A simple band multiplication (MUL)
+C++
+
+// New Operation: Band Multiplication (band1 * band2)
+bool op_performBandMultiplication(const std::map<std::string, std::string>& bandPaths,
+                                  const std::vector<std::string>& args,
+                                  const std::string& outputPath) {
+    std::cout << "\n--- Performing Band Multiplication ---" << std::endl;
+    if (args.size() != 2) {
+        std::cerr << "[ERROR] MUL operation requires 2 arguments: <band1_name> <band2_name>." << std::endl;
+        return false;
+    }
+    const std::string& band1Name = args[0];
+    const std::string& band2Name = args[1];
+
+    if (bandPaths.find(band1Name) == bandPaths.end() || bandPaths.find(band2Name) == bandPaths.end()) {
+        std::cerr << "[ERROR] Required bands for multiplication (" << band1Name << ", " << band2Name << ") not found." << std::endl;
+        return false;
+    }
+
+    GDALDataset *poBand1DS = (GDALDataset *) GDALOpen(bandPaths.at(band1Name).c_str(), GA_ReadOnly);
+    GDALDataset *poBand2DS = (GDALDataset *) GDALOpen(bandPaths.at(band2Name).c_str(), GA_ReadOnly);
+
+    if (poBand1DS == nullptr || poBand2DS == nullptr) {
+        std::cerr << "[ERROR] Could not open one or both bands for multiplication." << std::endl;
+        if (poBand1DS) GDALClose(poBand1DS);
+        if (poBand2DS) GDALClose(poBand2DS);
+        return false;
+    }
+
+    GDALRasterBand *poBand1 = poBand1DS->GetRasterBand(1);
+    GDALRasterBand *poBand2 = poBand2DS->GetRasterBand(1);
+
+    int nXSize = poBand1->GetXSize();
+    int nYSize = poBand1->GetYSize();
+
+    if (nXSize != poBand2->GetXSize() || nYSize != poBand2->GetYSize()) {
+        std::cerr << "[ERROR] Bands for multiplication have different dimensions." << std::endl;
+        GDALClose(poBand1DS); GDALClose(poBand2DS);
+        return false;
+    }
+
+    std::optional<std::vector<float>> data1Opt = readBandToFloat(poBand1, nXSize, nYSize);
+    std::optional<std::vector<float>> data2Opt = readBandToFloat(poBand2, nXSize, nYSize);
+
+    if (!data1Opt || !data2Opt) {
+        GDALClose(poBand1DS); GDALClose(poBand2DS);
+        return false;
+    }
+
+    std::vector<float> data1 = *data1Opt;
+    std::vector<float> data2 = *data2Opt;
+    std::vector<float> resultData(static_cast<size_t>(nXSize) * nYSize);
+
+    for (size_t i = 0; i < resultData.size(); ++i) {
+        resultData[i] = data1[i] * data2[i];
+    }
+
+    bool success = writeOutputTiff(outputPath, nXSize, nYSize, poBand1DS, resultData);
+
+    GDALClose(poBand1DS);
+    GDALClose(poBand2DS);
+    return success;
+}
+
+Step 2: Register Your New Operation
+
+Inside the S2Processor constructor, or any other appropriate initialization method, register your new function using the registerOperation method:
+C++
+
+class S2Processor {
+public:
+    S2Processor() {
+        // ... existing initialization ...
+
+        // Register default operations
+        registerOperation("NDVI", op_calculateNDVI);
+        registerOperation("ADD", op_performBandAddition);
+        registerOperation("SUB", op_performBandSubtraction);
+        registerOperation("FILTER", op_applyAveragingFilter);
+
+        // --- ADD YOUR NEW OPERATION HERE ---
+        registerOperation("MUL", op_performBandMultiplication); // Register the new multiplication operation
+        // --- END OF NEW OPERATION ADDITION ---
+
+        std::cout << "[INFO] Default band operations registered." << std::endl;
+    }
+    // ... rest of the class ...
+};
+
+Step 3: Update Command-Line Usage (Optional but Recommended)
+
+Update the main function's usage message to inform users about your new operation:
+C++
+
+int main(int argc, char* argv[]) {
+    // ... existing code ...
+
+    if (argc < 4) {
+        std::cerr << "[FATAL] Usage: " << argv[0] << " <zip_file_path> <output_tiff_path> <operation> [operation_args...]" << std::endl;
+        std::cerr << "Operations and their arguments:" << std::endl;
+        std::cerr << "  NDVI <NIR_band_name> <RED_band_name> (e.g., B08 B04)" << std::endl;
+        std::cerr << "  ADD <band1_name> <band2_name>" << std::endl;
+        std::cerr << "  SUB <band1_name> <band2_name> (band1 - band2)" << std::endl;
+        std::cerr << "  FILTER <band_name> (applies 3x3 averaging filter)" << std::endl;
+        // --- ADD YOUR NEW OPERATION USAGE HERE ---
+        std::cerr << "  MUL <band1_name> <band2_name>" << std::endl;
+        // --- END OF NEW OPERATION USAGE ---
+        std::cerr << "Example: " << argv[0] << " S2A_MSIL2A_...zip output_ndvi.tif NDVI B08 B04" << std::endl;
+        return 1;
+    }
+
+    // ... rest of the code ...
+}
+
+By following these steps, you can add new band operations to your S2Processor without altering the core processing pipeline, making your application truly modular and extensible.

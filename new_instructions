@@ -1,0 +1,71 @@
+You're hitting a classic linking error when building shared libraries\! The message:
+
+```
+relocation R_X86_64_PC32 against symbol `_ZSt4cerr@@GLIBCXX_3.4' can not be used when making a shared object; recompile with -fPIC
+```
+
+This error means that the object file `GdalUtils.o` (which is part of your static library `libgdalutils.a`) was **not compiled with Position-Independent Code (PIC)**. When you link a static library into a shared library (`.so`), all components of that static library must be PIC-compliant.
+
+You need to add the `-fPIC` flag when compiling `GdalUtils.cpp` into `GdalUtils.o`.
+
+Here are the corrected compilation steps:
+
+-----
+
+### Corrected Compilation Steps:
+
+1.  **Create `plugins` directory:** (If it doesn't already exist)
+
+    ```bash
+    mkdir -p plugins
+    ```
+
+2.  **Compile `GdalUtils.cpp` into a static library (`libgdalutils.a`) - CORRECTED:**
+    *Notice the added `-fPIC` flag in the first command.*
+
+    ```bash
+    g++ -std=c++20 -c -fPIC \
+      $(gdal-config --cflags) \
+      GdalUtils.cpp \
+      -o GdalUtils.o
+
+    ar rcs libgdalutils.a GdalUtils.o
+    ```
+
+    This will ensure `GdalUtils.o` is compiled with PIC, making it suitable for linking into shared libraries.
+
+3.  **Compile the main executable (`s2_processor`):**
+    (This command remains the same, as it was already correct for linking against the static library)
+
+    ```bash
+    g++ -std=c++20 -lstdc++fs \
+      -I. \
+      -I/usr/local/include/minizip \
+      $(gdal-config --cflags) \
+      s2_processor.cpp \
+      -L. -lgdalutils \
+      -o s2_processor \
+      -lminizip \
+      $(pkg-config --libs libxml-2.0) -llzma -lz \
+      -lproj -lgeos_c -lsqlite3 -lcurl \
+      -lgdal -lpthread -ldl -lm
+    ```
+
+4.  **Compile the NDVI Plugin (`libndvi_op.so`) - RE-RUN THIS:**
+    (This command remains the same, but it will now succeed because `libgdalutils.a` contains PIC code)
+
+    ```bash
+    g++ -std=c++20 -fPIC -shared \
+      -I. \
+      -I/usr/local/include/minizip \
+      $(gdal-config --cflags) \
+      NdviOperation.cpp \
+      -L. -lgdalutils \
+      -o plugins/libndvi_op.so \
+      -lminizip \
+      $(pkg-config --libs libxml-2.0) -llzma -lz \
+      -lproj -lgeos_c -lsqlite3 -lcurl \
+      -lgdal -lpthread -ldl -lm
+    ```
+
+Please run these commands in the specified order. The key change is recompiling `GdalUtils.cpp` with `-fPIC`.
