@@ -32,4 +32,6 @@ public:
     bool execute(const std::map<std::string, std::string>& bandPaths,
                  const std::vector<std::string>& args,
                  const std::string& outputPath) override;
+    std::vector<std::string> getRequiredBands(const std::vector<std::string>& args) const override;
+
 };
